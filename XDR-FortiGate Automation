@@ -1,0 +1,72 @@
+import requests
+
+# Replace with your FortiGate API credentials
+fortigate_url = "https://ip:4443"
+# URL of the webhook that provides the list of IPs
+webhook_url = "URL"
+
+# Create a session for session management and cookie storage
+session = requests.Session()
+
+# Make a GET request to the webhook to retrieve the list of IPs
+def receive_webhook_data():
+    # For testing, we'll use a JSON payload
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(
+        webhook_url,
+        headers=headers,
+    ).json()
+
+    return response
+responseweb = receive_webhook_data()
+
+# Function to block an IP on FortiGate
+def block_ip_on_fortigate(ip):
+    url = f"{fortigate_url}/api/v2/monitor/system/automation-stitch/webhook/Webhook_Automation/"
+    headers = {
+        "Authorization": "Bearer ",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "srcip":ip,
+        # Assuming a single IP address
+    }
+    response = session.post(url,headers=headers,json=payload,verify=False)
+    return response
+
+def virustotal_check(ip_list):
+    reported_ips = []
+    for ip in ip_list:
+        url = f'https://www.virustotal.com/api/v3/ip_addresses/{ip}'
+        headers = {'x-apikey': ''}
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            result = response.json()
+            #print(result)
+            # Check if the IP is reported by any engines
+            if  result['data']['attributes']['last_analysis_stats']['malicious']>0:
+                reported_ips.append(ip)
+                print(f"IP {ip} is reported on VirusTotal.")
+            else:
+                print(f"IP {ip} is not reported on VirusTotal.")
+        else:
+            print(f"Error checking IP {ip} on VirusTotal. Status code: {response.status_code}")
+    return reported_ips
+def deletdata():
+    url = f"{webhook_url}/del"
+    response = session.delete(url,verify=False)
+    return response
+print(responseweb)
+# Loop through the retrieved IPs
+for ip in responseweb:
+    for ipa in ip:
+        iptoblock=(str(ipa)).replace("'","").replace("[","").replace("]","").replace(" ","").replace("}","").replace("{","")
+        #iptoblock=ipaddress.ip_address(ip)
+    reported_ips = virustotal_check(ip)
+    for reportip in reported_ips:
+        #print(reportip)
+        block_ip_on_fortigate(reportip)
+deletdata()
