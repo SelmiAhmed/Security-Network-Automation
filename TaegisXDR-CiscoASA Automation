@@ -1,0 +1,96 @@
+import requests
+from netmiko import ConnectHandler
+
+def connect_to_device(device_info):
+    return ConnectHandler(**device_info)
+
+def shun_ip(net_connect, ip_address):
+    command = f"shun {ip_address}"
+    output = net_connect.send_command_timing(command)
+    return output
+
+def show_shun(net_connect):
+    command = "show shun"
+    output = net_connect.send_command(command)
+    return output
+# Replace with your FortiGate API credentials
+# URL of the webhook that provides the list of IPs
+webhook_url = ""
+
+# Create a session for session management and cookie storage
+session = requests.Session()
+
+# Make a GET request to the webhook to retrieve the list of IPs
+def receive_webhook_data():
+    # For testing, we'll use a JSON payload
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(
+        webhook_url,
+        headers=headers,
+    ).json()
+
+    return response
+responseweb = receive_webhook_data()
+
+
+
+def virustotal_check(ip_list):
+    reported_ips = []
+    for ip in ip_list:
+        url = f'https://www.virustotal.com/api/v3/ip_addresses/{ip}'
+        headers = {'x-apikey': ''}
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            result = response.json()
+            #print(result)
+            # Check if the IP is reported by any engines
+            if  result['data']['attributes']['last_analysis_stats']['malicious']>0:
+                reported_ips.append(ip)
+                print(f"IP {ip} is reported on VirusTotal.")
+            else:
+                print(f"IP {ip} is not reported on VirusTotal.")
+        else:
+            print(f"Error checking IP {ip} on VirusTotal. Status code: {response.status_code}")
+
+    return reported_ips
+
+
+
+def deletdata():
+    url = f"{webhook_url}/del"
+    response = session.delete(url,verify=False)
+    return response
+
+
+
+print(responseweb)
+cisco_asa_device = {
+        'device_type': 'cisco_asa',
+        'ip': '',
+        'username': '',
+        'password': ''
+        #'secret': 'your_enable_password',
+    }
+net_connect = connect_to_device(cisco_asa_device)
+# Loop through the retrieved IPs
+for ip in responseweb:
+    for ipa in ip:
+        iptoblock=(str(ipa)).replace("'","").replace("[","").replace("]","").replace(" ","").replace("}","").replace("{","")
+        #iptoblock=ipaddress.ip_address(ip)
+    reported_ips = virustotal_check(ip)
+    for reportip in reported_ips:
+        shun_output = shun_ip(net_connect, reportip)
+        print("Shun Output:")
+        print(shun_output)
+
+        # Show shunned IPs
+    shun_output = show_shun(net_connect)
+    print("\nCurrent shunned IPs:")
+    print(shun_output)
+
+        #print(reportip)
+deletdata()
+
