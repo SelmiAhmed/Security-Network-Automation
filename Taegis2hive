@@ -1,0 +1,149 @@
+
+import datetime
+import json
+import requests
+import numpy as np
+import random
+
+# Define the URL where the webhook will receive data
+webhook_url = ""
+
+# Define the URL of TheHive 5 API where you will post the new data format
+thehive_api_url = "http://{ip}/api/v1/alert"
+
+# Define your TheHive API key for authentication
+api_key = ""
+
+# Receive data from the webhook (you can adjust this part)
+def receive_webhook_data():
+    # Replace this with your webhook logic to receive data
+    # For testing, we'll use a sample JSON payload
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.get(
+        webhook_url,
+        headers=headers,
+    ).json()
+
+    return response  # Returns a list of JSON responses
+
+# Match and format the received data to the desired format
+def format_data(original_data):
+    def process_array(arr):
+        return np.array_split(arr, len(arr))
+
+    formatted_data_list = []
+
+    for data in original_data:
+        function_result = process_array(data["alert2"]["entities"]["entities"])
+        function_result1 = process_array(function_result)
+
+        result_parts = [digit[0] for digit in function_result]
+        rs = [digit for digit in data["alert2"]["entities"]["entities"]]
+        x = [i for i in range(len(rs))]
+
+        new_data = {
+            "type": "External Alert",
+            "source": "Secureworks Taegis XDR",
+            "sourceRef": data["alert2"]["resource_id"],
+            "title": "Alert: " + data["alert2"]["metadata"]["title"] + "- Tenant: " + data["alert2"]["tenant_id"],
+            "description": data["alert2"]["metadata"]["description"],
+            "severity": 4 if int(data["alert2"]["metadata"]["severity"] * 10) >= 9 else 3 if 9 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 7 else 2 if 7 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 4 else 1 if int(
+            data["alert2"]["metadata"]["severity"] * 10) < 4 else 0,
+        "date": data["alert2"]["metadata"]["inserted_at"]["seconds"],
+        "tags": ["XDR Alerts"],
+        "flag": True,
+        "tlp": 4 if int(data["alert2"]["metadata"]["severity"] * 10) >= 9 else 3 if 9 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 7 else 2 if 7 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 4 else 1 if int(
+            data["alert2"]["metadata"]["severity"] * 10) < 4 else 0,
+        "pap": 3 if int(data["alert2"]["metadata"]["severity"] * 10) >= 9 else 2 if 9 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 7 else 1 if 7 > int(
+            data["alert2"]["metadata"]["severity"] * 10) >= 4 else 0 if int(
+            data["alert2"]["metadata"]["severity"] * 10) < 4 else 0,
+        "customFields": {
+            "property1": None,
+            "property2": None
+        },
+        "summary": "Title:" + data["alert2"]["metadata"]["title"] + "\n Tenant:" + data[
+            "alert2"]["tenant_id"] + "\n Hostname:" + data["alert2"]["entities"]["entities"][3] + "\n Sensor:" +
+                   data["alert2"]["sensor_types"][0] + "-" + data["alert2"]["metadata"]["creator"][
+                       "detector"]["detector_name"],
+        "status": "New",
+        }
+
+        observables = set()  # Use a set to store unique observables
+
+        for entity in data["alert2"]["entities"]["entities"]:
+            data_type = "other"
+            if "fileName" in entity:
+             data_type = "filename"
+            elif "Domain" in entity:
+             data_type = "domain"
+            elif "dns" in entity:
+             data_type = "domain"
+            elif "Url" in entity:
+             data_type = "url"
+            elif "mail" in entity:
+             data_type = "mail"
+            elif "ip" in entity:
+             data_type = "ip"
+            elif "program" in entity:
+             data_type = "hash"
+            elif "Sha" in entity:
+             data_type = "hash"
+            elif "hostName" in entity:
+             data_type = "hostname"
+            elif "md" in entity:
+             data_type = "hash"
+
+            data_value = entity.split(":")[1]
+
+            observable = {
+                "dataType": data_type,
+                "data": data_value
+            }
+
+            # Only add observables with recognized data types
+            if data_type != "other":
+                observables.add(json.dumps(observable))  # Convert to JSON string to make it hashable
+
+        # Convert set back to a list of dictionaries
+        new_data["observables"] = [json.loads(obs) for obs in observables]
+
+        formatted_data_list.append(new_data)
+
+    return formatted_data_list
+
+# Send a POST request to TheHive 5 API for each formatted data
+def send_to_thehive(formatted_data_list):
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    for formatted_data in formatted_data_list:
+        try:
+            response = requests.post(
+                thehive_api_url,
+                headers=headers,
+                json=formatted_data
+            )
+
+            if response.status_code == 201:
+                print("Data successfully posted to TheHive 5.")
+            else:
+                print(f"Failed to post data to TheHive 5. Status code: {response.status_code}")
+                print(response.text)
+
+        except Exception as e:
+            print(f"Error: {str(e)}")
+
+if __name__ == "__main__":
+    webhook_data = receive_webhook_data()
+    formatted_data_list = format_data(webhook_data)
+    send_to_thehive(formatted_data_list)
