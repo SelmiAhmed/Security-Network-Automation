@@ -1,0 +1,31 @@
+
+# Replace with the actual webhook URL to fetch the list of usernames
+$webhookUrl = "URL"
+
+# Fetch the list of usernames from the webhook
+ $usernames = Invoke-RestMethod -Uri $webhookUrl -Method GET
+
+# Ensure you have the Active Directory module loaded
+Import-Module ActiveDirectory
+
+# Loop through the usernames and disable the accounts/change their passwords
+foreach ($username in $usernames) {
+ foreach ($useri in $username) {
+    try {
+
+        $user = Get-ADUser -Filter {SamAccountName -eq $useri }
+
+        if ($user) {
+            #Disable-ADAccount -Identity $useri
+            Set-ADUser -Identity $useri -ChangePasswordAtLogon:$true
+            #Write-Host "Disabled account: $useri"
+            Write-Host "Password Change Forced on: $useri"
+        } else {
+            Write-Host "User not found: $useri "
+        }
+    } catch {
+        Write-Host "Failed to take action on account: $useri  - $_"
+    }}
+}
+
+Invoke-RestMethod -Uri "URL" -Method DELETE
